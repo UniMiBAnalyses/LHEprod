@@ -1,4 +1,4 @@
-# Generate ROOT Ntuples starting from a gridpack
+# Generate ROOT Ntuples of LHE events starting from a gridpack
 
 Suppose you have a gridpack. You would like to plot some physical observable to check that the generation is reliable before proceeding for full production. 
 However you quickly find that LHE as XML files are not really easy to understand and to transform into the more user-friendly ROOT NTuples.
