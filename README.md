@@ -27,27 +27,29 @@ cmsRun LHEDumperRunner.py input=<PATH_TO_GRIDPACK(default=gridpack.tar.xz)> \
 
 A script is also provided to submit the generation in batch mode and on crab:
 ```
-usage: submit.py [-h] -gp GRIDPACK -o OUTPUT [-ne NEVENTS] [-nj NJOBS] [-nt NTHREADS] [-t TIER] [-q QUEUE] [--conf CONF] [--crabconf CRABCONF] [--crabout CRABOUT] [--datasetname DATASETNAME]
+usage: submit.py [-h] -gp GRIDPACK -o OUTPUT [-ne NEVENTS] [-nj NJOBS] [-nt NTHREADS] [-t TIER] [-q QUEUE] [--prefix LHE_PREFIX] [--conf CONF] [--crabconf CRABCONF] [--datasetname DATASETNAME]
                  [--requestname REQUESTNAME] [--datasettag DATASETTAG] [--maxmemory MAXMEMORY]
 
 optional arguments:
   -h, --help            show this help message and exit
   -gp GRIDPACK, --gridpack GRIDPACK
-                        Path to the gridpack you want to generate events with
+                        Path to the gridpack you want to generate events with. [REQUIRED]
   -o OUTPUT, --output OUTPUT
-                        Output folder where .root files will be stored. If using crab something like /store/user/<username>/...
+                        Output folder where .root files will be stored. If using crab something like /store/user/<username>/... [REQUIRED]
   -ne NEVENTS, --nevents NEVENTS
                         Number of events per job requested (def=1000)
   -nj NJOBS, --njobs NJOBS
                         Number of jobs requested (def=1)
   -nt NTHREADS, --nthreads NTHREADS
                         Number of threads x job (def=1)
-  -t TIER, --tier TIER  Tier for production, can be afs, eos, crab
+  -t TIER, --tier TIER  Tier for production. can be [afs, eos, crab]. Afs will submit jobs with HTcondor and save root files on afs while eos option will xrdcp to eos. crab instead will save on the
+                        specified tier in the crab config file
   -q QUEUE, --queue QUEUE
                         Condor queue (def=longlunch)
+  --prefix LHE_PREFIX, --prefix LHE_PREFIX
+                        The prefix of the output LHE files, by default written in conf.json
   --conf CONF           Load configuration file (default=configuration/conf.json)
-  --crabconf CRABCONF   Crab config json file
-  --crabout CRABOUT     Crab output directory. Necessary if using crab. Under config.Data.outLFNDirBase
+  --crabconf CRABCONF   Crab config json file (default=configuration/crabconf.json)
   --datasetname DATASETNAME
                         Crab dataset name under config.Data.outputPrimaryDataset. Can also specify in crabconfig
   --requestname REQUESTNAME
@@ -64,8 +66,15 @@ Some real life examples
 # crab submission
 submit.py -gp /eos/user/g/gboldrin/gridpacks/zee/zee_slc7_amd64_gcc700_CMSSW_10_6_19_tarball.tar.xz -t crab -o /store/user/gboldrin/PrivateMC/RunIISummer20UL18NanoAODv9_nanoLHE/
 
+# according to the current files in the configuration folder, the root files will be saved in
+# <args.output>/<crabconf.outputPrimaryDataset>/<crabconf.outputDatasetTag>/<date_time>/<run_number>/nanoAOD_LHE_<jobNumber>.root
+# /store/user/gboldrin/PrivateMC/RunIISummer20UL18NanoAODv9_nanoLHE/nAOD_LHE/Nanov12LHEOnly/240215_164509/0000/nanoAOD_LHE_1.root
 
+# afs submission on condor with afs output folder
+submit.py -gp /eos/user/g/gboldrin/gridpacks/zee/zee_slc7_amd64_gcc700_CMSSW_10_6_19_tarball.tar.xz -t afs -o $PWD/rootfiles
 
+# afs submission on condor with eos output folder
+submit.py -gp /eos/user/g/gboldrin/gridpacks/zee/zee_slc7_amd64_gcc700_CMSSW_10_6_19_tarball.tar.xz -t eos -o /eos/user/g/gboldrin/delete/
 ```
 
 
