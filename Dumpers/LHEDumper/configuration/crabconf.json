@@ -1,0 +1,7 @@
+{
+    "storageSite": "T3_IT_MIB",
+    "outputPrimaryDataset": "nAOD_LHE",
+    "requestName": "prova_nanoAOD_LHE_framework",
+    "maxmemory": 2500,
+    "outputDatasetTag": "Nanov12LHEOnly"
+}

@@ -5,6 +5,18 @@ import FWCore.ParameterSet.VarParsing as VarParsing
 # Paring command line arguments 
 options = VarParsing.VarParsing('analysis')
 
+options.register('jobNum', 
+                    0, 
+                    VarParsing.VarParsing.multiplicity.singleton,
+                    VarParsing.VarParsing.varType.int,
+                    "jobNum")
+
+options.register('nthreads', 
+                    1, 
+                    VarParsing.VarParsing.multiplicity.singleton,
+                    VarParsing.VarParsing.varType.int,
+                    "number of threads")
+
 options.register('input',
                     'gridpack.tar.xz',
                     VarParsing.VarParsing.multiplicity.singleton,
@@ -31,6 +43,9 @@ options.register('seed',
 
 options.parseArguments()
 
+# Cannot allow a seed = 0, increment by one (arbitrary)
+options.seed += 1
+
 
 # defining the process
 
@@ -55,6 +70,10 @@ process.maxEvents = cms.untracked.PSet(
 process.options = cms.untracked.PSet(
 
 )
+
+process.options.numberOfThreads = cms.untracked.uint32(options.nthreads)
+process.options.numberOfStreams = cms.untracked.uint32(options.nthreads)
+process.options.wantSummary = cms.untracked.bool(True)
 
 process.externalLHEProducer = cms.EDProducer("ExternalLHEProducer",
     args = cms.vstring(options.input),

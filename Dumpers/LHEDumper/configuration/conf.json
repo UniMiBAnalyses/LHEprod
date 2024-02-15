@@ -1,0 +1,5 @@
+{
+    "SCRAM": "el9_amd64_gcc12",
+    "CMSSW": "CMSSW_13_3_0",
+    "EOS_MGM_URL": "root://eosuser.cern.ch"
+}
