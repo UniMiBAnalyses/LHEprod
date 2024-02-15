@@ -9,15 +9,14 @@ To run the generation you first need to have a gridpack. You'll also need to hav
 
 ```
 # cmsrel <release_name>
-cmsrel CMSSW_12_4_11_patch3; cd  CMSSW_12_4_11_patch3/src; cmsenv
-# clone this repo
-git clone git@github.com:UniMiBAnalyses/LHEprod.git
-# compile the plugins
-scram b -j 8
+cmsrel CMSSW_12_4_11_patch3; cd  CMSSW_12_4_11_patch3/src; cmsenv         # get cmssw version and activate env
+git clone git@github.com:UniMiBAnalyses/LHEprod.git                       # clone this repo     
+source env.sh                                                             # crab and script setup
+scram b -j 8                                                              # compile the plugins
 ```
 
-Once the environment is ready you can geenrate events starting from the gridpack. The output will be a .root file:
-
+Once the environment is ready you can geenrate events starting from the gridpack. The output will be a .root file
+For generating events locally one can simply run:
 ```
 cd Dumpers/LHEDumper
 cmsRun LHEDumperRunner.py input=<PATH_TO_GRIDPACK(default=gridpack.tar.xz)> \
@@ -25,6 +24,50 @@ cmsRun LHEDumperRunner.py input=<PATH_TO_GRIDPACK(default=gridpack.tar.xz)> \
                           nevents=<NUMBER_OF_EVENTS(default=10)> \
                           seed=<STARTING_SEED(default=10)> 
 ```
+
+A script is also provided to submit the generation in batch mode and on crab:
+```
+usage: submit.py [-h] -gp GRIDPACK -o OUTPUT [-ne NEVENTS] [-nj NJOBS] [-nt NTHREADS] [-t TIER] [-q QUEUE] [--conf CONF] [--crabconf CRABCONF] [--crabout CRABOUT] [--datasetname DATASETNAME]
+                 [--requestname REQUESTNAME] [--datasettag DATASETTAG] [--maxmemory MAXMEMORY]
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -gp GRIDPACK, --gridpack GRIDPACK
+                        Path to the gridpack you want to generate events with
+  -o OUTPUT, --output OUTPUT
+                        Output folder where .root files will be stored. If using crab something like /store/user/<username>/...
+  -ne NEVENTS, --nevents NEVENTS
+                        Number of events per job requested (def=1000)
+  -nj NJOBS, --njobs NJOBS
+                        Number of jobs requested (def=1)
+  -nt NTHREADS, --nthreads NTHREADS
+                        Number of threads x job (def=1)
+  -t TIER, --tier TIER  Tier for production, can be afs, eos, crab
+  -q QUEUE, --queue QUEUE
+                        Condor queue (def=longlunch)
+  --conf CONF           Load configuration file (default=configuration/conf.json)
+  --crabconf CRABCONF   Crab config json file
+  --crabout CRABOUT     Crab output directory. Necessary if using crab. Under config.Data.outLFNDirBase
+  --datasetname DATASETNAME
+                        Crab dataset name under config.Data.outputPrimaryDataset. Can also specify in crabconfig
+  --requestname REQUESTNAME
+                        Name of the crab request under config.General.requestName
+  --datasettag DATASETTAG
+                        Name of the crab dataset tag under config.Data.outputDatasetTag
+  --maxmemory MAXMEMORY
+                        Max memory of the crab request under config.JobType.maxMemoryMB
+```
+
+Some real life examples
+
+```
+# crab submission
+submit.py -gp /eos/user/g/gboldrin/gridpacks/zee/zee_slc7_amd64_gcc700_CMSSW_10_6_19_tarball.tar.xz -t crab -o /store/user/gboldrin/PrivateMC/RunIISummer20UL18NanoAODv9_nanoLHE/
+
+
+
+```
+
 
 The structure of the output root file is the same as what can be seen in central nanoAOD files. In the ``Èvents``` TTree of the file one can see the 
 following branches, comprising both initial/intermediate/final state kinematics but also theory uncertainties for renormalization and factorization scales, 
