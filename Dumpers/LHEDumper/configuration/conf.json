@@ -1,5 +1,6 @@
 {
     "SCRAM": "el9_amd64_gcc12",
     "CMSSW": "CMSSW_13_3_0",
-    "EOS_MGM_URL": "root://eosuser.cern.ch"
+    "EOS_MGM_URL": "root://eosuser.cern.ch",
+    "LHE_PREFIX": "nAOD_LHE"
 }

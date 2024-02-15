@@ -48,6 +48,7 @@ def createCondor__(args):
 
     scram_ = d["SCRAM"]
     cmssw_ = d["CMSSW"]
+    lhe_prefix_ = args.lhe_prefix if args.lhe_prefix else d["LHE_PREFIX"]
 
     # retrieve the CMSSW base 
     base_ = os.environ["CMSSW_BASE"]
@@ -89,7 +90,7 @@ def createCondor__(args):
         condorSub.write(f'+JobFlavour = "{args.queue}"\n')
         condorSub.write('\n\n')
         if args.tier == "afs":
-            condorSub.write(f'transfer_output_remaps = "$(nAOD_output) = {args.output}/nAODLHE_$(Step).root"\n')
+            condorSub.write(f'transfer_output_remaps = "$(nAOD_output) = {args.output}/{lhe_prefix_}_$(Step).root"\n')
             condorSub.write('when_to_transfer_output = ON_EXIT\n')
             condorSub.write('\n\n')
 
@@ -123,7 +124,7 @@ def createCondor__(args):
         condorExe.write('cmsRun -e -j FrameworkJobReport.xml LHEDumperRunner.py jobNum="$1" seed="$1" output="$3" nthreads="$4" nevents="$5" input="${PWD}/${gp_here}"\n')
         condorExe.write('\n\n')
         # if the output stage is eos, xrdcp into it
-        if args.tier == "eos": condorExe.write(f'xrdcp "$3" "$EOS_MGM_URL"/{args.output}/nAODLHE_"$1".root\n')
+        if args.tier == "eos": condorExe.write(f'xrdcp "$3" "$EOS_MGM_URL"/{args.output}/{lhe_prefix_}_"$1".root\n')
         else:
             condorExe.write('mv $3 $CMSSW_BASE; cd $CMSSW_BASE\n')
             condorExe.write('mv $3 ..; cd ..\n')
@@ -195,11 +196,12 @@ def createCrab__(args):
     datasetname = args.datasetname if args.datasetname else dc["outputPrimaryDataset"]
     datasettag =  args.datasettag if args.datasettag else dc["outputDatasetTag"]
     requestname = args.requestname if args.requestname else dc["requestName"]
+    lhe_prefix = args.lhe_prefix if args.lhe_prefix else d["LHE_PREFIX"]
 
     requestname += "_{}".format(len(glob("crab_" + requestname + "*")))
 
     configlhe=runner_
-    outputName = 'nanoAOD_LHE.root'
+    outputName = f'{lhe_prefix}.root'
     gp = args.gridpack
     nEvents = args.nevents
     nEventsTotal = int(args.nevents * args.njobs)
@@ -251,6 +253,7 @@ if __name__ == "__main__":
     parser.add_argument('-nt',  '--nthreads',   dest='nthreads',     help='Number of threads x job (def=1)', required = False, default=1, type=int)
     parser.add_argument('-t',  '--tier',   dest='tier',     help='Tier for production. can be [afs, eos, crab]. Afs will submit jobs with HTcondor and save root files on afs while eos option will xrdcp to eos. crab instead will save on the specified tier in the crab config file', required = False, default="afs", type=str)
     parser.add_argument('-q',  '--queue',   dest='queue',     help='Condor queue (def=longlunch)', required = False, default="longlunch", type=str)
+    parser.add_argument('--prefix',  '--prefix',   dest='lhe_prefix',     help='The prefix of the output LHE files, by default written in conf.json', required = False, default=None, type=str)
     parser.add_argument('--conf',   dest='conf',     help='Load configuration file (default=configuration/conf.json)', required = False, default = os.path.join(os.environ["CMSSW_BASE"], "src", "Dumpers", "LHEDumper", "configuration", "conf.json"))
     # crab specific settings
     parser.add_argument('--crabconf',   dest='crabconf',     help='Crab config json file (default=configuration/crabconf.json)', required = False, default = os.path.join(os.environ["CMSSW_BASE"], "src", "Dumpers", "LHEDumper", "configuration", "crabconf.json"))
