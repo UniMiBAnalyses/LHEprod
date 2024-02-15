@@ -244,17 +244,16 @@ def createCrab__(args):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-gp',  '--gridpack',   dest='gridpack',     help='Path to the gridpack you want to generate events with', required = True, type=str)
-    parser.add_argument('-o',  '--output',   dest='output',     help='Output folder where .root files will be stored. If using crab something like /store/user/<username>/...', required = True, type=str)
+    parser.add_argument('-gp',  '--gridpack',   dest='gridpack',     help='Path to the gridpack you want to generate events with. [REQUIRED]', required = True, type=str)
+    parser.add_argument('-o',  '--output',   dest='output',     help='Output folder where .root files will be stored. If using crab something like /store/user/<username>/... [REQUIRED]', required = True, type=str)
     parser.add_argument('-ne',  '--nevents',   dest='nevents',     help='Number of events per job requested (def=1000)', required = False, default=1000, type=int)
     parser.add_argument('-nj',  '--njobs',   dest='njobs',     help='Number of jobs requested (def=1)', required = False, default=1, type=int)
     parser.add_argument('-nt',  '--nthreads',   dest='nthreads',     help='Number of threads x job (def=1)', required = False, default=1, type=int)
-    parser.add_argument('-t',  '--tier',   dest='tier',     help='Tier for production, can be afs, eos, crab', required = False, default="afs", type=str)
+    parser.add_argument('-t',  '--tier',   dest='tier',     help='Tier for production. can be [afs, eos, crab]. Afs will submit jobs with HTcondor and save root files on afs while eos option will xrdcp to eos. crab instead will save on the specified tier in the crab config file', required = False, default="afs", type=str)
     parser.add_argument('-q',  '--queue',   dest='queue',     help='Condor queue (def=longlunch)', required = False, default="longlunch", type=str)
     parser.add_argument('--conf',   dest='conf',     help='Load configuration file (default=configuration/conf.json)', required = False, default = os.path.join(os.environ["CMSSW_BASE"], "src", "Dumpers", "LHEDumper", "configuration", "conf.json"))
     # crab specific settings
-    parser.add_argument('--crabconf',   dest='crabconf',     help='Crab config json file', required = False, default = os.path.join(os.environ["CMSSW_BASE"], "src", "Dumpers", "LHEDumper", "configuration", "crabconf.json"))
-    parser.add_argument('--crabout',   dest='crabout',     help='Crab output directory. Necessary if using crab. Under config.Data.outLFNDirBase', required = False, default = None)
+    parser.add_argument('--crabconf',   dest='crabconf',     help='Crab config json file (default=configuration/crabconf.json)', required = False, default = os.path.join(os.environ["CMSSW_BASE"], "src", "Dumpers", "LHEDumper", "configuration", "crabconf.json"))
     parser.add_argument('--datasetname',   dest='datasetname',     help='Crab dataset name under config.Data.outputPrimaryDataset. Can also specify in crabconfig', required = False, default = None)
     parser.add_argument('--requestname',   dest='requestname',     help='Name of the crab request under config.General.requestName', required = False, default = None)
     parser.add_argument('--datasettag',   dest='datasettag',     help='Name of the crab dataset tag under config.Data.outputDatasetTag', required = False, default = None)
