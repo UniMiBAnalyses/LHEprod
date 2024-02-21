@@ -23,12 +23,6 @@ options.register('input',
                     VarParsing.VarParsing.varType.string,
                     "input gridpack path (without file: prefix)")
 
-options.register('output',
-                    'output.root',
-                    VarParsing.VarParsing.multiplicity.singleton,
-                    VarParsing.VarParsing.varType.string,
-                    "output file name (without file: prefix)")
-
 options.register('nevents',
                     10,
                     VarParsing.VarParsing.multiplicity.singleton,
@@ -127,14 +121,13 @@ process.NANOAODSIMEventContent = NanoAODEDMEventContent.clone(
 )
 
 process.NANOAODSIMoutput = cms.OutputModule("NanoAODOutputModule",
-
     compressionAlgorithm = cms.untracked.string('LZMA'),
     compressionLevel = cms.untracked.int32(9),
     dataset = cms.untracked.PSet(
         dataTier = cms.untracked.string('NANOAODSIM'),
         filterName = cms.untracked.string('')
     ),
-    fileName = cms.untracked.string('file:' + options.output),
+    fileName = cms.untracked.string('file:nAOD_LHE.root'),
     outputCommands = process.NANOAODSIMEventContent.outputCommands
 )
 

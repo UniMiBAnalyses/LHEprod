@@ -31,30 +31,31 @@ def submitCondor__(condorpath_):
 
 def createCondor__(args):
 
-    path_ = tempfile.mkdtemp()
-    
-    print("--> Info: condor logs will be saved at " + path_)
-
-    # load general config
-    d = json.load(open(args.conf, "r"))
-
-    condor_log_ = "condor_log"
-    if not os.path.isdir(path_):  os.mkdir(path_)
-    if not os.path.isdir(os.path.join(path_, condor_log_)): os.mkdir(os.path.join(path_, condor_log_))
-
-    print("--> Info: condor logs will be saved at " + os.path.join(path_, condor_log_))
-    exe_ = "submit.sh"
-    sub_ = "submit.jdl"
-
-    scram_ = d["SCRAM"]
-    cmssw_ = d["CMSSW"]
-    lhe_prefix_ = args.lhe_prefix if args.lhe_prefix else d["LHE_PREFIX"]
-
     # retrieve the CMSSW base 
     base_ = os.environ["CMSSW_BASE"]
     runner_ = os.path.join(base_, "src", "Dumpers", "LHEDumper", "LHEDumperRunner.py")
     pluginsfolder_ = os.path.join(base_, "src", "Dumpers", "LHEDumper", "plugins")
     pyfolder_ = os.path.join(base_, "src", "Dumpers", "LHEDumper", "python")
+
+    path_ = os.path.join(base_, "src", "Dumpers", "LHEDumper", ".condorsub")
+    condor_log_ = "condor_log"
+
+    full_path_ = os.path.join(path_, condor_log_)
+
+    # load general config
+    d = json.load(open(args.conf, "r"))
+
+    
+    if not os.path.isdir(path_):  os.mkdir(path_)
+    if not os.path.isdir(full_path_): os.mkdir(full_path_)
+
+    print("--> Info: condor logs will be saved at " + full_path_)
+    exe_ = "submit.sh"
+    sub_ = "submit.jdl"
+
+    scram_ = d["SCRAM"]
+    cmssw_ = d["CMSSW"]
+    lhe_prefix_ = "nAOD_LHE"
 
     if swConsistency__(scram_, cmssw_):
         print(f"--> Warning setup condor jobs with SCRAM={scram_} and CMSSW={cmssw_}")
@@ -72,7 +73,7 @@ def createCondor__(args):
         condorSub.write(f'executable = {exe_}\n')
         condorSub.write('universe = vanilla\n')
         for step__ in ["output", "error", "log"]:
-            condorSub.write(f'{step__}                = condor_log/job.$(ClusterId).$(ProcId).$(Step).{step__[:3]}\n')
+            condorSub.write(f'{step__}                = {full_path_}/job.$(ClusterId).$(ProcId).$(Step).{step__[:3]}\n')
         condorSub.write('on_exit_hold = (ExitBySignal == True) || (ExitCode != 0)\n')
         condorSub.write('periodic_release =  (NumJobStarts < 3) && ((CurrentTime - EnteredCurrentStatus) > (60*3))\n')
         condorSub.write('request_cpus = 1\n')
@@ -84,13 +85,13 @@ def createCondor__(args):
         condorSub.write(f'nthreads = {args.nthreads}\n')
         condorSub.write(f'nevents = {args.nevents}\n')
         condorSub.write("\n\n")
-        condorSub.write('arguments = $(Step) $(gridpack) $(nAOD_output) $(nthreads) $(nevents)\n')
+        condorSub.write('arguments = $(Step) $(gridpack) $(nthreads) $(nevents)\n')
         condorSub.write('should_transfer_files = YES\n')
         condorSub.write('transfer_input_files = {}, {}, {} {}'.format(runner_, pluginsfolder_, pyfolder_, ", " + args.gridpack + "\n" if not eosgp else "\n" ))
         condorSub.write(f'+JobFlavour = "{args.queue}"\n')
         condorSub.write('\n\n')
         if args.tier == "afs":
-            condorSub.write(f'transfer_output_remaps = "$(nAOD_output) = {args.output}/{lhe_prefix_}_$(Step).root"\n')
+            condorSub.write(f'transfer_output_remaps = "{lhe_prefix_}.root = {args.output}/{lhe_prefix_}_$(Step).root"\n')
             condorSub.write('when_to_transfer_output = ON_EXIT\n')
             condorSub.write('\n\n')
 
@@ -120,14 +121,14 @@ def createCondor__(args):
         condorExe.write('splits=($(echo $2 | tr "/" " "))\n')
         condorExe.write('gp_here=${splits[-1]} # this is the name of the gridpack in local\n')
         condorExe.write('\n\n')
-        condorExe.write('echo "cmsRun -e -j FrameworkJobReport.xml LHEDumperRunner.py jobNum="$1" seed="$1" output="$3" nthreads="$4" nevents="$5" input="${PWD}/${gp_here}""\n')
-        condorExe.write('cmsRun -e -j FrameworkJobReport.xml LHEDumperRunner.py jobNum="$1" seed="$1" output="$3" nthreads="$4" nevents="$5" input="${PWD}/${gp_here}"\n')
+        condorExe.write('echo "cmsRun -e -j FrameworkJobReport.xml LHEDumperRunner.py jobNum="$1" seed="$1" nthreads="$3" nevents="$4" input="${PWD}/${gp_here}""\n')
+        condorExe.write('cmsRun -e -j FrameworkJobReport.xml LHEDumperRunner.py jobNum="$1" seed="$1" nthreads="$3" nevents="$4" input="${PWD}/${gp_here}"\n')
         condorExe.write('\n\n')
         # if the output stage is eos, xrdcp into it
-        if args.tier == "eos": condorExe.write(f'xrdcp "$3" "$EOS_MGM_URL"/{args.output}/{lhe_prefix_}_"$1".root\n')
+        if args.tier == "eos": condorExe.write(f'xrdcp {lhe_prefix_}.root "$EOS_MGM_URL"/{args.output}/{lhe_prefix_}_"$1".root\n')
         else:
-            condorExe.write('mv $3 $CMSSW_BASE; cd $CMSSW_BASE\n')
-            condorExe.write('mv $3 ..; cd ..\n')
+            condorExe.write(f'mv {lhe_prefix_}.root $CMSSW_BASE; cd $CMSSW_BASE\n')
+            condorExe.write(f'mv {lhe_prefix_}.root ..; cd ..\n')
             condorExe.write('ls -lrth \n')
             condorExe.write('echo "Done"\n')
 
@@ -148,6 +149,7 @@ def createCrab__(args):
      sandbox. Path should start with /eos")
     if not args.output.startswith("/store"): raise RuntimeError("Provide an output directory compatible with crab standards")
 
+    print("sono qui")
 
     # load crab config
     dc = json.load(open(args.crabconf, "r"))
@@ -157,6 +159,8 @@ def createCrab__(args):
     base_ = os.environ["CMSSW_BASE"]
     runner_ = os.path.join(base_, "src", "Dumpers", "LHEDumper", "LHEDumperRunner.py")
     runner_name_ = "LHEDumperRunner.py"
+
+    lhe_prefix = "nAOD_LHE"
 
     # first build the crab script
 
@@ -185,7 +189,9 @@ def createCrab__(args):
         crabExe.write(f'echo "cmsRun -e -j FrameworkJobReport.xml {runner_name_} ' + 'jobNum="$1" \
                         seed="$1" "$3" "$4" "$5" input="${PWD}/${gp_here}""\n')
         crabExe.write(f'cmsRun -e -j FrameworkJobReport.xml {runner_name_} ' + 'jobNum="$1" \
-                        seed="$1" "$3" "$4" "$5" input="${PWD}/${gp_here}"\n')
+                        seed="$1" "$3" "$4" input="${PWD}/${gp_here}"\n')
+        crabExe.write('\n\n')
+
 
     # make it executable chmod +x
     st = os.stat(exe_)
@@ -196,7 +202,6 @@ def createCrab__(args):
     datasetname = args.datasetname if args.datasetname else dc["outputPrimaryDataset"]
     datasettag =  args.datasettag if args.datasettag else dc["outputDatasetTag"]
     requestname = args.requestname if args.requestname else dc["requestName"]
-    lhe_prefix = args.lhe_prefix if args.lhe_prefix else d["LHE_PREFIX"]
 
     requestname += "_{}".format(len(glob("crab_" + requestname + "*")))
 
@@ -218,11 +223,11 @@ def createCrab__(args):
     # config.JobType.pyCfgParams = ['nThreads='+str(nThreads)]
     ## To be executed on node with Arguments
     config.JobType.scriptExe   = exe_
-    config.JobType.scriptArgs  = ['input='+gp,'output='+outputName, 'nthreads='+str(nThreads), 'nevents='+str(nEvents)]
+    config.JobType.scriptArgs  = ['input='+gp, 'nthreads='+str(nThreads), 'nevents='+str(nEvents)]
     config.JobType.inputFiles  = [configlhe]
     ## Output file to be collected
     config.JobType.outputFiles = [outputName]
-    config.JobType.disableAutomaticOutputCollection = True
+    config.JobType.disableAutomaticOutputCollection = False
     ## Memory, cores, cmssw
     config.JobType.allowUndistributedCMSSW = True
     config.JobType.maxMemoryMB = args.maxmemory if args.maxmemory else dc["maxmemory"]
@@ -243,6 +248,53 @@ def createCrab__(args):
     crabCommand('submit', config = config)
 
 
+def merge__(args):
+
+     # load general config
+    d = json.load(open(args.conf, "r"))
+
+    outFile_ = args.merge
+
+    # if working on afs or eos tier then we can collect all files simply with glob
+
+    if args.tier in ["afs", "eos"]:
+        lhe_prefix = "nAOD_LHE"
+        inputFiles_ = f'{args.output}/{lhe_prefix}'
+        retrieve_ = glob(inputFiles_ + '*.root')
+        if len(retrieve_) == 0:
+            print(f'Info did not found any file at path {args.output}, check job status')
+        os.system('hadd -j 8 {} {}'.format(outFile_,  " ".join(i for i in retrieve_)))
+
+    # If it is crab things are a little bit more complicated, 
+    # files will be stored on the tier as 
+    #    <args.output>/<crabconf.outputPrimaryDataset>/<crabconf.outputDatasetTag>/<date_time>/<run_number>/<lhe_prefix>_<jobNumber>.root
+    
+    else:
+        if not args.crabmerge:
+            raise RuntimeError('If you want to use merge on crab production, you need to also specify --crabmerge \
+                               giving the path to the crab diretory on your local afs crab_<requestName>_<number>')
+        
+        # retrieve the dataset 
+        from CRABAPI.RawCommand import crabCommand
+        res = crabCommand('status', d = args.crabmerge)
+
+        # for some reason it is a str of a list
+        od = res["outdatasets"][2:-2]
+        st = res["status"]
+        dbst = res["dbStatus"]
+
+        if st != "COMPLETED":
+            raise RuntimeError("The submission is not yet completed. Control with crab status -d <dir_name>")
+        
+        # gather files
+
+        print(f'dasgoclient --query="file dataset={od} instance=prod/phys03"')
+        files_ = os.popen(f'dasgoclient --query="file dataset={od} instance=prod/phys03"').read().split('\n')
+
+        print(files_)
+
+
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
@@ -253,7 +305,8 @@ if __name__ == "__main__":
     parser.add_argument('-nt',  '--nthreads',   dest='nthreads',     help='Number of threads x job (def=1)', required = False, default=1, type=int)
     parser.add_argument('-t',  '--tier',   dest='tier',     help='Tier for production. can be [afs, eos, crab]. Afs will submit jobs with HTcondor and save root files on afs while eos option will xrdcp to eos. crab instead will save on the specified tier in the crab config file', required = False, default="afs", type=str)
     parser.add_argument('-q',  '--queue',   dest='queue',     help='Condor queue (def=longlunch)', required = False, default="longlunch", type=str)
-    parser.add_argument('--prefix',  '--prefix',   dest='lhe_prefix',     help='The prefix of the output LHE files, by default written in conf.json', required = False, default=None, type=str)
+    parser.add_argument('-m',  '--merge',   dest='merge',     help='Collect output root files and merge them. Provide an output path at -m (default=None)', required = False, default=None, type=str)
+    parser.add_argument('-cm',  '--crabmerge',   dest='crabmerge',     help='For crab merge, you need to also specify the crab direcotry in your local afs so we can gather the necessary information of the published dataset', required = False, default=None, type=str)
     parser.add_argument('--conf',   dest='conf',     help='Load configuration file (default=configuration/conf.json)', required = False, default = os.path.join(os.environ["CMSSW_BASE"], "src", "Dumpers", "LHEDumper", "configuration", "conf.json"))
     # crab specific settings
     parser.add_argument('--crabconf',   dest='crabconf',     help='Crab config json file (default=configuration/crabconf.json)', required = False, default = os.path.join(os.environ["CMSSW_BASE"], "src", "Dumpers", "LHEDumper", "configuration", "crabconf.json"))
@@ -266,20 +319,26 @@ if __name__ == "__main__":
 
     if not args.tier in ["afs", "eos", "crab"]: raise KeyError(f"Tier argument {args.tier} is not supported is not in afs eos crab")
     
-    if args.tier == "eos":
-        if not args.output.startswith("/eos"): 
-            raise ValueError("You specified eos Tier but the ooutput path is not a eos directory. Specify an output path starting with /eos")
-        
-    if args.tier == "afs":
-        if args.output.startswith("/afs"): pass 
-        elif args.output.startswith("/eos"): 
-            print("--> Warning output stage on eos requested, will change to eos tier")
-            args.tier = "eos" 
-        else: args.output = os.path.join(os.environ["PWD"], args.output)
-        if not os.path.isdir(args.output): os.mkdir(args.output)
+    if not args.merge:
+        if args.tier == "eos":
+            if not args.output.startswith("/eos"): 
+                raise ValueError("You specified eos Tier but the ooutput path is not a eos directory. Specify an output path starting with /eos")
+            
+        if args.tier == "afs":
+            if args.output.startswith("/afs"): pass 
+            elif args.output.startswith("/eos"): 
+                print("--> Warning output stage on eos requested, will change to eos tier")
+                args.tier = "eos" 
+            else: args.output = os.path.join(os.environ["PWD"], args.output)
+            if not os.path.isdir(args.output): os.mkdir(args.output)
 
-    if args.tier in ["afs", "eos"] : 
-        condorpath_ = createCondor__(args)
-        submitCondor__(condorpath_)
+    
+        if args.tier in ["afs", "eos"] : 
+            condorpath_ = createCondor__(args)
+            submitCondor__(condorpath_)
+        else:
+            print("CRAB")
+            createCrab__(args)
+
     else:
-        createCrab__(args)
+        merge__(args)
