@@ -84,7 +84,7 @@ process.configurationMetadata = cms.untracked.PSet(
 	annotation = cms.untracked.string('user file')
 )
 
-from Dumpers.LHEDumper.lheWeightTable_cfi import lheWeightsTable
+from LHEprod.LHEDumper.lheWeightTable_cfi import lheWeightsTable
 from PhysicsTools.NanoAOD.taus_cff import *
 from PhysicsTools.NanoAOD.jetMC_cff import *
 from PhysicsTools.NanoAOD.globals_cff import genTable,genFilterTable

@@ -33,11 +33,11 @@ def createCondor__(args):
 
     # retrieve the CMSSW base 
     base_ = os.environ["CMSSW_BASE"]
-    runner_ = os.path.join(base_, "src", "Dumpers", "LHEDumper", "LHEDumperRunner.py")
-    pluginsfolder_ = os.path.join(base_, "src", "Dumpers", "LHEDumper", "plugins")
-    pyfolder_ = os.path.join(base_, "src", "Dumpers", "LHEDumper", "python")
+    runner_ = os.path.join(base_, "src", "LHEprod", "LHEDumper", "LHEDumperRunner.py")
+    pluginsfolder_ = os.path.join(base_, "src", "LHEprod", "LHEDumper", "plugins")
+    pyfolder_ = os.path.join(base_, "src", "LHEprod", "LHEDumper", "python")
 
-    path_ = os.path.join(base_, "src", "Dumpers", "LHEDumper", ".condorsub")
+    path_ = os.path.join(base_, "src", "LHEprod", "LHEDumper", ".condorsub")
     condor_log_ = "condor_log"
 
     full_path_ = os.path.join(path_, condor_log_)
@@ -81,7 +81,6 @@ def createCondor__(args):
         condorSub.write("\n\n")
         condorSub.write('request_cpus = 1\n')
         condorSub.write(f'gridpack = {args.gridpack}\n') # we do not care if the gridpack is on eos or afs here
-        condorSub.write('nAOD_output = nanoAOD_LHE.root\n')
         condorSub.write(f'nthreads = {args.nthreads}\n')
         condorSub.write(f'nevents = {args.nevents}\n')
         condorSub.write("\n\n")
@@ -110,11 +109,11 @@ def createCondor__(args):
         condorExe.write(f'cmsrel {cmssw_}\n')
         condorExe.write('\n\n')
         condorExe.write(f'cd {cmssw_}/src; eval `scram runtime -sh`; cd -\n')
-        condorExe.write(f'mkdir $CMSSW_BASE/src/Dumpers; mkdir $CMSSW_BASE/src/Dumpers/LHEDumper\n')
-        condorExe.write('cp -r plugins $CMSSW_BASE/src/Dumpers/LHEDumper\n')
-        condorExe.write('cp -r python $CMSSW_BASE/src/Dumpers/LHEDumper \n')
-        condorExe.write('cp LHEDumperRunner.py $CMSSW_BASE/src/Dumpers/LHEDumper\n')
-        condorExe.write('cd $CMSSW_BASE/src/Dumpers/LHEDumper\n')
+        condorExe.write(f'mkdir $CMSSW_BASE/src/LHEprod; mkdir $CMSSW_BASE/src/LHEprod/LHEDumper\n')
+        condorExe.write('cp -r plugins $CMSSW_BASE/src/LHEprod/LHEDumper\n')
+        condorExe.write('cp -r python $CMSSW_BASE/src/LHEprod/LHEDumper \n')
+        condorExe.write('cp LHEDumperRunner.py $CMSSW_BASE/src/LHEprod/LHEDumper\n')
+        condorExe.write('cd $CMSSW_BASE/src/LHEprod/LHEDumper\n')
         condorExe.write('\n\n')
         condorExe.write('scram b -j 8\n')
         if eosgp: condorExe.write(f'xrdcp {d["EOS_MGM_URL"]}/"${2}" .\n')
@@ -157,14 +156,14 @@ def createCrab__(args):
 
     # retrieve the CMSSW base 
     base_ = os.environ["CMSSW_BASE"]
-    runner_ = os.path.join(base_, "src", "Dumpers", "LHEDumper", "LHEDumperRunner.py")
+    runner_ = os.path.join(base_, "src", "LHEprod", "LHEDumper", "LHEDumperRunner.py")
     runner_name_ = "LHEDumperRunner.py"
 
     lhe_prefix = "nAOD_LHE"
 
     # first build the crab script
 
-    exe_ = os.path.join(base_, "src", "Dumpers", "LHEDumper", "scripts", "crabsubmit.sh")
+    exe_ = os.path.join(base_, "src", "LHEprod", "LHEDumper", "scripts", "crabsubmit.sh")
     with open(exe_, 'w') as crabExe:
         crabExe.write('#!/bin/bash\n')
         crabExe.write('bash\n')
@@ -307,9 +306,9 @@ if __name__ == "__main__":
     parser.add_argument('-q',  '--queue',   dest='queue',     help='Condor queue (def=longlunch)', required = False, default="longlunch", type=str)
     parser.add_argument('-m',  '--merge',   dest='merge',     help='Collect output root files and merge them. Provide an output path at -m (default=None)', required = False, default=None, type=str)
     parser.add_argument('-cm',  '--crabmerge',   dest='crabmerge',     help='For crab merge, you need to also specify the crab direcotry in your local afs so we can gather the necessary information of the published dataset', required = False, default=None, type=str)
-    parser.add_argument('--conf',   dest='conf',     help='Load configuration file (default=configuration/conf.json)', required = False, default = os.path.join(os.environ["CMSSW_BASE"], "src", "Dumpers", "LHEDumper", "configuration", "conf.json"))
+    parser.add_argument('--conf',   dest='conf',     help='Load configuration file (default=configuration/conf.json)', required = False, default = os.path.join(os.environ["CMSSW_BASE"], "src", "LHEprod", "LHEDumper", "configuration", "conf.json"))
     # crab specific settings
-    parser.add_argument('--crabconf',   dest='crabconf',     help='Crab config json file (default=configuration/crabconf.json)', required = False, default = os.path.join(os.environ["CMSSW_BASE"], "src", "Dumpers", "LHEDumper", "configuration", "crabconf.json"))
+    parser.add_argument('--crabconf',   dest='crabconf',     help='Crab config json file (default=configuration/crabconf.json)', required = False, default = os.path.join(os.environ["CMSSW_BASE"], "src", "LHEprod", "LHEDumper", "configuration", "crabconf.json"))
     parser.add_argument('--datasetname',   dest='datasetname',     help='Crab dataset name under config.Data.outputPrimaryDataset. Can also specify in crabconfig', required = False, default = None)
     parser.add_argument('--requestname',   dest='requestname',     help='Name of the crab request under config.General.requestName', required = False, default = None)
     parser.add_argument('--datasettag',   dest='datasettag',     help='Name of the crab dataset tag under config.Data.outputDatasetTag', required = False, default = None)
