@@ -7,7 +7,7 @@ cmsenv
 
 # this is the python with crab in the current arch
 py="#!"$(which python3)
-submit=$CMSSW_BASE/src/Dumpers/LHEDumper/scripts/submit.py
+submit=$CMSSW_BASE/src/LHEprod/Dumpers/LHEDumper/scripts/submit.py
 
 # add the correct python exec to shebang in submit script
 
