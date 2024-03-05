@@ -5,6 +5,9 @@ import argparse
 import tempfile
 import json
 from glob import glob
+import multiprocessing  as mp
+import numpy as np
+import ROOT
 
 def swConsistency__(scram, cmssw):
     current_scram_ = os.environ["SCRAM_ARCH"]
@@ -148,8 +151,6 @@ def createCrab__(args):
      sandbox. Path should start with /eos")
     if not args.output.startswith("/store"): raise RuntimeError("Provide an output directory compatible with crab standards")
 
-    print("sono qui")
-
     # load crab config
     dc = json.load(open(args.crabconf, "r"))
     d = json.load(open(args.conf, "r"))
@@ -186,7 +187,7 @@ def createCrab__(args):
         crabExe.write('gp_here=${splits2[-1]} # this is the name of the gridpack in local\n')
         crabExe.write('\n\n')
         crabExe.write(f'echo "cmsRun -e -j FrameworkJobReport.xml {runner_name_} ' + 'jobNum="$1" \
-                        seed="$1" "$3" "$4" "$5" input="${PWD}/${gp_here}""\n')
+                        seed="$1" "$3" "$4" input="${PWD}/${gp_here}""\n')
         crabExe.write(f'cmsRun -e -j FrameworkJobReport.xml {runner_name_} ' + 'jobNum="$1" \
                         seed="$1" "$3" "$4" input="${PWD}/${gp_here}"\n')
         crabExe.write('\n\n')
@@ -246,6 +247,13 @@ def createCrab__(args):
     from CRABAPI.RawCommand import crabCommand
     crabCommand('submit', config = config)
 
+def computeXsec__(file_):
+    print(f'processing file {file_}')
+    df = ROOT.RDataFrame("Events", file_)
+    xsec = df.Sum("LHEWeight_originalXWGTUP").GetValue()
+    nev = df.Count().GetValue()
+    
+    return [xsec, nev]
 
 def merge__(args):
 
@@ -262,7 +270,36 @@ def merge__(args):
         retrieve_ = glob(inputFiles_ + '*.root')
         if len(retrieve_) == 0:
             print(f'Info did not found any file at path {args.output}, check job status')
-        os.system('hadd -j 8 {} {}'.format(outFile_,  " ".join(i for i in retrieve_)))
+
+
+        # compute the cross section weight for the overall file
+        # Need to scan each file separately
+        print("Computing cross section for the merged file")
+        pool = mp.Pool(8)
+        results = pool.map(computeXsec__, retrieve_)
+        xsecs = np.array([i[0] for i in results])
+        xsec = xsecs.mean()
+        err = xsecs.std()
+        nev = np.array([i[1] for i in results]).sum()
+        
+        # We can use this value to fill histograms and obtain the right normalization straight away
+        # Will save as fb in order to normalize with integrated lumi at LHC
+        baseW =  1000.* xsec/nev
+
+        print(f"Final xsec = {xsec} +- {err} pb for NEvents {nev} (per-event weight: {baseW} fb)")
+
+        # Actually merge the files
+        tmp__ = tempfile.NamedTemporaryFile( suffix='.root' ) 
+        os.remove(tmp__.name)
+
+        os.system('hadd -j 8 {} {}'.format(tmp__.name,  " ".join(i for i in retrieve_)))
+
+        # Append the baseW column 
+        # This is NanoAOD so we will have Events TTree
+        df = ROOT.RDataFrame("Events", tmp__.name)
+        df.Define("baseW", str(baseW)).Snapshot("Events", outFile_)
+
+
 
     # If it is crab things are a little bit more complicated, 
     # files will be stored on the tier as 
