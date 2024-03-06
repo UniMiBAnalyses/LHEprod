@@ -8,6 +8,7 @@ from glob import glob
 import multiprocessing  as mp
 import numpy as np
 import ROOT
+import shutil
 
 def swConsistency__(scram, cmssw):
     current_scram_ = os.environ["SCRAM_ARCH"]
@@ -116,13 +117,15 @@ def createCondor__(args):
         condorExe.write('cp -r plugins $CMSSW_BASE/src/LHEprod/LHEDumper\n')
         condorExe.write('cp -r python $CMSSW_BASE/src/LHEprod/LHEDumper \n')
         condorExe.write('cp LHEDumperRunner.py $CMSSW_BASE/src/LHEprod/LHEDumper\n')
-        condorExe.write('cd $CMSSW_BASE/src/LHEprod/LHEDumper\n')
         condorExe.write('\n\n')
-        condorExe.write('scram b -j 8\n')
         if eosgp: condorExe.write(f'xrdcp {d["EOS_MGM_URL"]}/"${2}" .\n')
         condorExe.write('splits=($(echo $2 | tr "/" " "))\n')
         condorExe.write('gp_here=${splits[-1]} # this is the name of the gridpack in local\n')
+        condorExe.write('cp $gp_here $CMSSW_BASE/src/LHEprod/LHEDumper\n')
         condorExe.write('\n\n')
+        condorExe.write('cd $CMSSW_BASE/src/LHEprod/LHEDumper\n')
+        condorExe.write('scram b -j 8\n')
+
         condorExe.write('echo "cmsRun -e -j FrameworkJobReport.xml LHEDumperRunner.py jobNum="$1" seed="$1" nthreads="$3" nevents="$4" input="${PWD}/${gp_here}""\n')
         condorExe.write('cmsRun -e -j FrameworkJobReport.xml LHEDumperRunner.py jobNum="$1" seed="$1" nthreads="$3" nevents="$4" input="${PWD}/${gp_here}"\n')
         condorExe.write('\n\n')
@@ -255,51 +258,93 @@ def computeXsec__(file_):
     
     return [xsec, nev]
 
-def merge__(args):
+def mtCrossSectionWeight__(args):
 
-     # load general config
+    # load general config
     d = json.load(open(args.conf, "r"))
 
-    outFile_ = args.merge
+    # retrieve all files
+    lhe_prefix = "nAOD_LHE"
+    inputFiles_ = f'{args.output}/{lhe_prefix}'
+    retrieve_ = glob(inputFiles_ + '*.root')
+    if len(retrieve_) == 0:
+        print(f'Info did not found any file at path {args.output}, check job status')
+
+    # compute the cross section weight for the generation
+    # Need to scan each file separately
+    pool = mp.Pool(8)
+    results = pool.map(computeXsec__, retrieve_)
+    xsecs = np.array([i[0] for i in results])
+    xsec = xsecs.mean()
+    err = xsecs.std()
+    nev = np.array([i[1] for i in results]).sum()
+    
+    # We can use this value to fill histograms and obtain the right normalization straight away
+    # Will save as fb in order to normalize with integrated lumi at LHC
+    # sum of weights = xsec !!!
+    baseW =  1000.* xsec/nev
+
+    print(f"Final xsec = {xsec} +- {err} pb for NEvents {nev} (per-event weight: {baseW} fb)")
+
+    return baseW
+
+def mtbaseWUtil__(arg):
+    # arg = {"path": '', "baseW": ''}
+    opts = ROOT.RDF.RSnapshotOptions()
+    opts.fMode = "update"
+    opts.fOverwriteIfExists = True
+
+    df = ROOT.RDataFrame("Events", arg['path'])
+
+    if "baseW" in df.GetColumnNames(): return 
+
+    tmp__ = tempfile.NamedTemporaryFile( suffix='.root' ) 
+    os.remove(tmp__.name)
+    
+    df.Define("baseW", str(arg['baseW'])).Snapshot("Events", tmp__.name, "", opts)
+    shutil.copyfile(tmp__.name, arg['path'])
+
+def appendBaseW__(files, baseW):
+
+    # expects files as a list of string and baseW as a str / number
+    nt_ = 8 if len(files) > 8 else len(files)
+    args = [{"path": i, "baseW": baseW} for i in files]
+    
+    pool = mp.Pool(nt_)
+    pool.map(mtbaseWUtil__, args)
+    
+
+def addCrossSectionWeight__(args):
+    # load general config
+    d = json.load(open(args.conf, "r"))
+    lhe_prefix = "nAOD_LHE"
 
     # if working on afs or eos tier then we can collect all files simply with glob
 
     if args.tier in ["afs", "eos"]:
-        lhe_prefix = "nAOD_LHE"
         inputFiles_ = f'{args.output}/{lhe_prefix}'
         retrieve_ = glob(inputFiles_ + '*.root')
-        if len(retrieve_) == 0:
-            print(f'Info did not found any file at path {args.output}, check job status')
+        baseW = mtCrossSectionWeight__(args)
+        appendBaseW__(retrieve_, baseW)
 
+def merge__(args):
 
-        # compute the cross section weight for the overall file
-        # Need to scan each file separately
-        print("Computing cross section for the merged file")
-        pool = mp.Pool(8)
-        results = pool.map(computeXsec__, retrieve_)
-        xsecs = np.array([i[0] for i in results])
-        xsec = xsecs.mean()
-        err = xsecs.std()
-        nev = np.array([i[1] for i in results]).sum()
+    # load general config
+    d = json.load(open(args.conf, "r"))
+
+    outFile_ = args.merge
+    lhe_prefix = "nAOD_LHE"
+    baseW = mtCrossSectionWeight__(args)
+    inputFiles_ = f'{args.output}/{lhe_prefix}'
+
+    # if working on afs or eos tier then we can collect all files simply with glob
+    if args.tier in ["afs", "eos"]:
         
-        # We can use this value to fill histograms and obtain the right normalization straight away
-        # Will save as fb in order to normalize with integrated lumi at LHC
-        baseW =  1000.* xsec/nev
-
-        print(f"Final xsec = {xsec} +- {err} pb for NEvents {nev} (per-event weight: {baseW} fb)")
-
-        # Actually merge the files
-        tmp__ = tempfile.NamedTemporaryFile( suffix='.root' ) 
-        os.remove(tmp__.name)
-
-        os.system('hadd -j 8 {} {}'.format(tmp__.name,  " ".join(i for i in retrieve_)))
+        retrieve_ = glob(inputFiles_ + '*.root')
+        os.system('hadd -j 8 {} {}'.format(outFile_,  " ".join(i for i in retrieve_)))
 
         # Append the baseW column 
-        # This is NanoAOD so we will have Events TTree
-        df = ROOT.RDataFrame("Events", tmp__.name)
-        df.Define("baseW", str(baseW)).Snapshot("Events", outFile_)
-
-
+        appendBaseW__([outFile_] , baseW)
 
     # If it is crab things are a little bit more complicated, 
     # files will be stored on the tier as 
@@ -329,13 +374,87 @@ def merge__(args):
 
         print(files_)
 
+# def merge__(args):
+
+#     # load general config
+#     d = json.load(open(args.conf, "r"))
+
+#     outFile_ = args.merge
+
+#     # if working on afs or eos tier then we can collect all files simply with glob
+
+#     if args.tier in ["afs", "eos"]:
+#         lhe_prefix = "nAOD_LHE"
+#         inputFiles_ = f'{args.output}/{lhe_prefix}'
+#         retrieve_ = glob(inputFiles_ + '*.root')
+#         if len(retrieve_) == 0:
+#             print(f'Info did not found any file at path {args.output}, check job status')
+
+
+#         # compute the cross section weight for the overall file
+#         # Need to scan each file separately
+#         print("Computing cross section for the merged file")
+#         pool = mp.Pool(8)
+#         results = pool.map(computeXsec__, retrieve_)
+#         xsecs = np.array([i[0] for i in results])
+#         xsec = xsecs.mean()
+#         err = xsecs.std()
+#         nev = np.array([i[1] for i in results]).sum()
+        
+#         # We can use this value to fill histograms and obtain the right normalization straight away
+#         # Will save as fb in order to normalize with integrated lumi at LHC
+#         baseW =  1000.* xsec/nev
+
+#         print(f"Final xsec = {xsec} +- {err} pb for NEvents {nev} (per-event weight: {baseW} fb)")
+
+#         # Actually merge the files
+#         tmp__ = tempfile.NamedTemporaryFile( suffix='.root' ) 
+#         os.remove(tmp__.name)
+
+#         os.system('hadd -j 8 {} {}'.format(tmp__.name,  " ".join(i for i in retrieve_)))
+
+#         # Append the baseW column 
+#         # This is NanoAOD so we will have Events TTree
+#         df = ROOT.RDataFrame("Events", tmp__.name)
+#         df.Define("baseW", str(baseW)).Snapshot("Events", outFile_)
+
+
+
+#     # If it is crab things are a little bit more complicated, 
+#     # files will be stored on the tier as 
+#     #    <args.output>/<crabconf.outputPrimaryDataset>/<crabconf.outputDatasetTag>/<date_time>/<run_number>/<lhe_prefix>_<jobNumber>.root
+    
+#     else:
+#         if not args.crabmerge:
+#             raise RuntimeError('If you want to use merge on crab production, you need to also specify --crabmerge \
+#                                giving the path to the crab diretory on your local afs crab_<requestName>_<number>')
+        
+#         # retrieve the dataset 
+#         from CRABAPI.RawCommand import crabCommand
+#         res = crabCommand('status', d = args.crabmerge)
+
+#         # for some reason it is a str of a list
+#         od = res["outdatasets"][2:-2]
+#         st = res["status"]
+#         dbst = res["dbStatus"]
+
+#         if st != "COMPLETED":
+#             raise RuntimeError("The submission is not yet completed. Control with crab status -d <dir_name>")
+        
+#         # gather files
+
+#         print(f'dasgoclient --query="file dataset={od} instance=prod/phys03"')
+#         files_ = os.popen(f'dasgoclient --query="file dataset={od} instance=prod/phys03"').read().split('\n')
+
+#         print(files_)
+
 
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-gp',  '--gridpack',   dest='gridpack',     help='Path to the gridpack you want to generate events with. [REQUIRED]', required = True, type=str)
-    parser.add_argument('-o',  '--output',   dest='output',     help='Output folder where .root files will be stored. If using crab something like /store/user/<username>/... [REQUIRED]', required = True, type=str)
+    parser.add_argument('-gp',  '--gridpack',   dest='gridpack',     help='Path to the gridpack you want to generate events with. [REQUIRED]', required = False, type=str)
+    parser.add_argument('-o',  '--output',   dest='output',     help='Output folder where .root files will be stored. If using crab something like /store/user/<username>/... [REQUIRED]', required = False, type=str)
     parser.add_argument('-ne',  '--nevents',   dest='nevents',     help='Number of events per job requested (def=1000)', required = False, default=1000, type=int)
     parser.add_argument('-nj',  '--njobs',   dest='njobs',     help='Number of jobs requested (def=1)', required = False, default=1, type=int)
     parser.add_argument('-nt',  '--nthreads',   dest='nthreads',     help='Number of threads x job (def=1)', required = False, default=1, type=int)
@@ -344,18 +463,20 @@ if __name__ == "__main__":
     parser.add_argument('-m',  '--merge',   dest='merge',     help='Collect output root files and merge them. Provide an output path at -m (default=None)', required = False, default=None, type=str)
     parser.add_argument('-cm',  '--crabmerge',   dest='crabmerge',     help='For crab merge, you need to also specify the crab direcotry in your local afs so we can gather the necessary information of the published dataset', required = False, default=None, type=str)
     parser.add_argument('--conf',   dest='conf',     help='Load configuration file (default=configuration/conf.json)', required = False, default = os.path.join(os.environ["CMSSW_BASE"], "src", "LHEprod", "LHEDumper", "configuration", "conf.json"))
+    # Appen base w
+    parser.add_argument('--basew',          dest='basew',     help='Add the cross section weight gathering all the files from the output folders', default=False, action='store_true')
     # crab specific settings
-    parser.add_argument('--crabconf',   dest='crabconf',     help='Crab config json file (default=configuration/crabconf.json)', required = False, default = os.path.join(os.environ["CMSSW_BASE"], "src", "LHEprod", "LHEDumper", "configuration", "crabconf.json"))
-    parser.add_argument('--datasetname',   dest='datasetname',     help='Crab dataset name under config.Data.outputPrimaryDataset. Can also specify in crabconfig', required = False, default = None)
-    parser.add_argument('--requestname',   dest='requestname',     help='Name of the crab request under config.General.requestName', required = False, default = None)
-    parser.add_argument('--datasettag',   dest='datasettag',     help='Name of the crab dataset tag under config.Data.outputDatasetTag', required = False, default = None)
-    parser.add_argument('--maxmemory',   dest='maxmemory',     help='Max memory of the crab request under config.JobType.maxMemoryMB', required = False, default = None)
+    parser.add_argument('--crabconf',       dest='crabconf',        help='Crab config json file (default=configuration/crabconf.json)', required = False, default = os.path.join(os.environ["CMSSW_BASE"], "src", "LHEprod", "LHEDumper", "configuration", "crabconf.json"))
+    parser.add_argument('--datasetname',    dest='datasetname',     help='Crab dataset name under config.Data.outputPrimaryDataset. Can also specify in crabconfig', required = False, default = None)
+    parser.add_argument('--requestname',    dest='requestname',     help='Name of the crab request under config.General.requestName', required = False, default = None)
+    parser.add_argument('--datasettag',     dest='datasettag',      help='Name of the crab dataset tag under config.Data.outputDatasetTag', required = False, default = None)
+    parser.add_argument('--maxmemory',      dest='maxmemory',       help='Max memory of the crab request under config.JobType.maxMemoryMB', required = False, default = None)
 
     args = parser.parse_args()
 
     if not args.tier in ["afs", "eos", "crab"]: raise KeyError(f"Tier argument {args.tier} is not supported is not in afs eos crab")
     
-    if not args.merge:
+    if not args.merge and not args.basew:
         if args.tier == "eos":
             if not args.output.startswith("/eos"): 
                 raise ValueError("You specified eos Tier but the ooutput path is not a eos directory. Specify an output path starting with /eos")
@@ -376,5 +497,9 @@ if __name__ == "__main__":
             print("CRAB")
             createCrab__(args)
 
-    else:
+    elif args.merge:
         merge__(args)
+
+    elif args.basew:
+        addCrossSectionWeight__(args)
+
