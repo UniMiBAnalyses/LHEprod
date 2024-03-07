@@ -31,9 +31,195 @@ def submitCondor__(condorpath_):
     os.system("condor_submit submit.jdl")
 
     return
+
+
+def customizeArgs__(args):
+
+    # check if user requested a gridpack (so generate events) or 
+    # if the user requested lhe ntuplizer
+
+    base_ = os.environ["CMSSW_BASE"]
+
+    if not args.gridpack and not args.lhefiles: raise KeyError(f"You should either specify -gp <path_to_gridpack> for event generation \
+                                                    or -lhe <path_to_lhe_folder> to ntuplize existing lhe files")
+
+    condorSub_config = {}
+    condorSub_config["runner"] = "LHEDumperRunner.py" if args.gridpack else "LHEDumperRunnerFromLHE.py"
+
+    runner_ = os.path.join(base_, "src", "LHEprod", "LHEDumper", condorSub_config['runner'])
+    pluginsfolder_ = os.path.join(base_, "src", "LHEprod", "LHEDumper", "plugins")
+    pyfolder_ = os.path.join(base_, "src", "LHEprod", "LHEDumper", "python")
+
+    condorSub_config["arguments"] = {}
+    if args.gridpack:
+        eosgp = args.gridpack.startswith("/eos")
+        condorSub_config["arguments"]['gridpack'] = args.gridpack 
+        condorSub_config["arguments"]['nthreads'] = args.nthreads 
+        condorSub_config["arguments"]['nevents'] = args.nevents 
+        condorSub_config["arguments"]['nevents'] = args.nevents 
+        condorSub_config["arguments"]['arguments'] = "$(Step) $(gridpack) $(nthreads) $(nevents)"
+        gpArg__ = ", " + args.gridpack + "\n" if not eosgp else "\n"
+        condorSub_config["arguments"]['transfer_input_files'] = f'{runner_}, {pluginsfolder_}, {pyfolder_} {gpArg__}'
+
+        if args.tier == "afs":
+            condorSub_config["arguments"]['transfer_output_remaps'] = f'"{lhe_prefix_}.root = {args.output}/{lhe_prefix_}_$(Step).root"'
+            condorSub_config["arguments"]['when_to_transfer_output'] = "ON_EXIT"
+
+        condorSub_config["queue"] = f"{args.njobs}"
+
+    elif args.lhefiles:
+        condorSub_config["arguments"]['nthreads'] = args.nthreads
+        condorSub_config["arguments"]['arguments'] = "$(Step) $(filename) $(nthreads)"
+        condorSub_config["arguments"]['transfer_input_files'] = f"{runner_}, {pluginsfolder_}, {pyfolder_}, $(filename)"
+
+        if not args.lhefiles.startswith('/'): args.lhefiles = os.path.abspath(args.lhefiles)
+        if not args.lhefiles.endswith('/'): args.lhefiles += '/'
+
+        condorSub_config["queue"] = f"filename matching files {args.lhefiles}*.lhe"
+
+
+    # condor exe
+
+    condorExe_config = {}
+    condorExe_config["runner"] = "LHEDumperRunner.py" if args.gridpack else "LHEDumperRunnerFromLHE.py"
+    condorExe_config["commands"] = {}
+    if args.gridpack:
+        condorExe_config["commands"] = [
+            'gp_here=${splits[-1]} # this is the name of the gridpack in local\n',
+            'cp $gp_here $CMSSW_BASE/src/LHEprod/LHEDumper\n'
+        ]
+
+        if not eosgp: condorExe_config["commands"].pop(0)
+
+        condorExe_config["cmsRun"] = '-e -j FrameworkJobReport.xml LHEDumperRunner.py jobNum="$1" seed="$1" nthreads="$3" nevents="$4" input="${PWD}/${gp_here}"\n'
+
+    elif args.lhefiles:
+        condorExe_config["commands"] = [
+            'lhe_here=${splits[-1]} # this is the name of the gridpack in local\n',
+            'cp $lhe_here $CMSSW_BASE/src/LHEprod/LHEDumper\n'
+        ]
+
+        condorExe_config["cmsRun"] = '-e -j FrameworkJobReport.xml LHEDumperRunnerFromLHE.py jobNum="$1" nthreads="$3" inputFiles="file:${lhe_here}"\n'
+
+    args.condorSub_config = condorSub_config
+    args.condorExe_config = condorExe_config
+
+    return 
     
 
 def createCondor__(args):
+
+    customizeArgs__(args)
+
+    # retrieve the CMSSW base 
+    base_ = os.environ["CMSSW_BASE"]
+
+    path_ = os.path.join(base_, "src", "LHEprod", "LHEDumper", ".condorsub")
+    condor_log_ = "condor_log"
+
+    full_path_ = os.path.join(path_, condor_log_)
+
+    # load general config
+    d = json.load(open(args.conf, "r"))
+
+    
+    if not os.path.isdir(path_):  os.mkdir(path_)
+    if not os.path.isdir(full_path_): os.mkdir(full_path_)
+
+    print("--> Info: condor logs will be saved at " + full_path_)
+    exe_ = "submit.sh"
+    sub_ = "submit.jdl"
+
+    scram_ = d["SCRAM"]
+    cmssw_ = d["CMSSW"]
+    lhe_prefix_ = "nAOD_LHE"
+
+    if swConsistency__(scram_, cmssw_):
+        print(f"--> Warning setup condor jobs with SCRAM={scram_} and CMSSW={cmssw_}")
+
+    # check if gridpack is on afs or on eos
+    eosgp = False if args.gridpack is None else args.gridpack.startswith("/eos")
+    eoslhe = False if args.lhefiles is None else args.lhefiles.startswith("/eos")
+
+    # make the submission file
+    # Need to check that input and output paths agree with tier
+    # if afs, we should transfer input files specifying in the .jdl
+    # if eos, we should xrdcp from inside the .sh script
+    
+    
+    with open(os.path.join(path_, sub_), 'w') as condorSub:
+        condorSub.write(f'executable = {exe_}\n')
+        condorSub.write('universe = vanilla\n')
+        for step__ in ["output", "error", "log"]:
+            condorSub.write(f'{step__}                = {full_path_}/job.$(ClusterId).$(ProcId).$(Step).{step__[:3]}\n')
+        condorSub.write('on_exit_hold = (ExitBySignal == True) || (ExitCode != 0)\n')
+        condorSub.write('periodic_release =  (NumJobStarts < 3) && ((CurrentTime - EnteredCurrentStatus) > (60*3))\n')
+        condorSub.write('request_cpus = 1\n')
+        condorSub.write(f'MY.WantOS = "{scram_[:3]}"\n')
+        
+        condorSub.write('request_cpus = 1\n')
+        condorSub.write(f'+JobFlavour = "{args.queue}"\n')
+
+        condorSub.write("\n\n")
+
+        for a, item in  args.condorSub_config["arguments"].items():
+            condorSub.write(f'{a} = {item}\n')
+
+        condorSub.write('\n\n')
+
+        if args.tier == "afs":
+            condorSub.write(f'transfer_output_remaps = "{lhe_prefix_}.root = {args.output}/{lhe_prefix_}_$(Step).root"\n')
+            condorSub.write('when_to_transfer_output = ON_EXIT\n')
+            condorSub.write('\n\n')
+
+        condorSub.write('queue {}\n'.format(args.condorSub_config["queue"]))
+
+    with open(os.path.join(path_, exe_), 'w') as condorExe:
+        condorExe.write('#!/bin/bash\n')
+        condorExe.write(f'export EOS_MGM_URL={d["EOS_MGM_URL"]}\n')
+        condorExe.write('echo "Starting job on " `date` #Date/time of start of job\n')
+        condorExe.write('echo "Running on: `uname -a`" #Condor job is running on this node\n')
+        condorExe.write('echo "System software: `cat /etc/redhat-release`" #Operating System on that node\n')
+        condorExe.write('echo "System software: `cat /etc/redhat-release`" #Operating System on that node\n')
+        condorExe.write('source /cvmfs/cms.cern.ch/cmsset_default.sh\n')
+        condorExe.write('\n\n')
+        condorExe.write(f'export SCRAM_ARCH={scram_}\n')
+        condorExe.write(f'cmsrel {cmssw_}\n')
+        condorExe.write('\n\n')
+        condorExe.write(f'cd {cmssw_}/src; eval `scram runtime -sh`; cd -\n')
+        condorExe.write(f'mkdir $CMSSW_BASE/src/LHEprod; mkdir $CMSSW_BASE/src/LHEprod/LHEDumper\n')
+        condorExe.write('cp -r plugins $CMSSW_BASE/src/LHEprod/LHEDumper\n')
+        condorExe.write('cp -r python $CMSSW_BASE/src/LHEprod/LHEDumper \n')
+        condorExe.write('cp LHEDumperRunner.py $CMSSW_BASE/src/LHEprod/LHEDumper\n')
+        condorExe.write('\n\n')
+        if eosgp or eoslhe: condorExe.write(f'xrdcp {d["EOS_MGM_URL"]}/"${2}" .\n')
+        condorExe.write('splits=($(echo $2 | tr "/" " "))\n')
+
+        for item in args.condorExe_config["commands"]:
+            condorExe.write(item)
+
+        condorExe.write('\n\n')
+        condorExe.write('cd $CMSSW_BASE/src/LHEprod/LHEDumper\n')
+        condorExe.write('scram b -j 8\n')
+
+        condorExe.write(f'echo "cmsRun {args.condorExe_config["cmsRun"]}"\n')
+        condorExe.write(f'cmsRun {args.condorExe_config["cmsRun"]}\n')
+        condorExe.write('\n\n')
+        # if the output stage is eos, xrdcp into it
+        if args.tier == "eos": condorExe.write(f'xrdcp {lhe_prefix_}.root "$EOS_MGM_URL"/{args.output}/{lhe_prefix_}_"$1".root\n')
+        else:
+            condorExe.write(f'mv {lhe_prefix_}.root $CMSSW_BASE; cd $CMSSW_BASE\n')
+            condorExe.write(f'mv {lhe_prefix_}.root ..; cd ..\n')
+            condorExe.write('ls -lrth \n')
+            condorExe.write('echo "Done"\n')
+
+    # make it executable chmod +x
+    st = os.stat(os.path.join(path_, exe_))
+    os.chmod(os.path.join(path_, exe_), st.st_mode | stat.S_IEXEC)
+
+    return path_ 
+
+""" def createCondor__(args):
 
     # retrieve the CMSSW base 
     base_ = os.environ["CMSSW_BASE"]
@@ -84,6 +270,7 @@ def createCondor__(args):
         condorSub.write(f'MY.WantOS = "{scram_[:3]}"\n')
         condorSub.write("\n\n")
         condorSub.write('request_cpus = 1\n')
+
         condorSub.write(f'gridpack = {args.gridpack}\n') # we do not care if the gridpack is on eos or afs here
         condorSub.write(f'nthreads = {args.nthreads}\n')
         condorSub.write(f'nevents = {args.nevents}\n')
@@ -91,6 +278,7 @@ def createCondor__(args):
         condorSub.write('arguments = $(Step) $(gridpack) $(nthreads) $(nevents)\n')
         condorSub.write('should_transfer_files = YES\n')
         condorSub.write('transfer_input_files = {}, {}, {} {}'.format(runner_, pluginsfolder_, pyfolder_, ", " + args.gridpack + "\n" if not eosgp else "\n" ))
+
         condorSub.write(f'+JobFlavour = "{args.queue}"\n')
         condorSub.write('\n\n')
         if args.tier == "afs":
@@ -141,7 +329,7 @@ def createCondor__(args):
     st = os.stat(os.path.join(path_, exe_))
     os.chmod(os.path.join(path_, exe_), st.st_mode | stat.S_IEXEC)
 
-    return path_
+    return path_ """
 
 def createCrab__(args):
 
@@ -453,7 +641,8 @@ def merge__(args):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-gp',  '--gridpack',   dest='gridpack',     help='Path to the gridpack you want to generate events with. [REQUIRED]', required = False, type=str)
+    parser.add_argument('-gp',  '--gridpack',   dest='gridpack',     help='Path to the gridpack you want to generate events with.', required = False, type=str)
+    parser.add_argument('-lhe',  '--lhe',   dest='lhefiles',     help='Path to the folder containing .lhe files retrieved with glob and ntuplized', required = False, type=str)
     parser.add_argument('-o',  '--output',   dest='output',     help='Output folder where .root files will be stored. If using crab something like /store/user/<username>/... [REQUIRED]', required = False, type=str)
     parser.add_argument('-ne',  '--nevents',   dest='nevents',     help='Number of events per job requested (def=1000)', required = False, default=1000, type=int)
     parser.add_argument('-nj',  '--njobs',   dest='njobs',     help='Number of jobs requested (def=1)', required = False, default=1, type=int)
@@ -474,7 +663,15 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    print(args.lhefiles)
+
     if not args.tier in ["afs", "eos", "crab"]: raise KeyError(f"Tier argument {args.tier} is not supported is not in afs eos crab")
+
+    if args.lhefiles:
+        condorpath_ = createCondor__(args)
+        submitCondor__(condorpath_)
+        print("Done")
+        exit()
     
     if not args.merge and not args.basew:
         if args.tier == "eos":
@@ -494,7 +691,6 @@ if __name__ == "__main__":
             condorpath_ = createCondor__(args)
             submitCondor__(condorpath_)
         else:
-            print("CRAB")
             createCrab__(args)
 
     elif args.merge:
