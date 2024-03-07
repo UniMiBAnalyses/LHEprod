@@ -57,19 +57,19 @@ def customizeArgs__(args):
         condorSub_config["arguments"]['nthreads'] = args.nthreads 
         condorSub_config["arguments"]['nevents'] = args.nevents 
         condorSub_config["arguments"]['nevents'] = args.nevents 
-        condorSub_config["arguments"]['arguments'] = "$(Step) $(gridpack) $(nthreads) $(nevents)"
+        condorSub_config["arguments"]['arguments'] = "$(ProcId) $(gridpack) $(nthreads) $(nevents)"
         gpArg__ = ", " + args.gridpack + "\n" if not eosgp else "\n"
         condorSub_config["arguments"]['transfer_input_files'] = f'{runner_}, {pluginsfolder_}, {pyfolder_} {gpArg__}'
 
         if args.tier == "afs":
-            condorSub_config["arguments"]['transfer_output_remaps'] = f'"{lhe_prefix_}.root = {args.output}/{lhe_prefix_}_$(Step).root"'
+            condorSub_config["arguments"]['transfer_output_remaps'] = f'"{lhe_prefix_}.root = {args.output}/{lhe_prefix_}_$(ProcId).root"'
             condorSub_config["arguments"]['when_to_transfer_output'] = "ON_EXIT"
 
         condorSub_config["queue"] = f"{args.njobs}"
 
     elif args.lhefiles:
         condorSub_config["arguments"]['nthreads'] = args.nthreads
-        condorSub_config["arguments"]['arguments'] = "$(Step) $(filename) $(nthreads)"
+        condorSub_config["arguments"]['arguments'] = "$(ProcId) $(filename) $(nthreads)"
         condorSub_config["arguments"]['transfer_input_files'] = f"{runner_}, {pluginsfolder_}, {pyfolder_}, $(filename)"
 
         if not args.lhefiles.startswith('/'): args.lhefiles = os.path.abspath(args.lhefiles)
@@ -151,7 +151,7 @@ def createCondor__(args):
         condorSub.write(f'executable = {exe_}\n')
         condorSub.write('universe = vanilla\n')
         for step__ in ["output", "error", "log"]:
-            condorSub.write(f'{step__}                = {full_path_}/job.$(ClusterId).$(ProcId).$(Step).{step__[:3]}\n')
+            condorSub.write(f'{step__}                = {full_path_}/job.$(ClusterId).$(ProcId).$(ProcId).{step__[:3]}\n')
         condorSub.write('on_exit_hold = (ExitBySignal == True) || (ExitCode != 0)\n')
         condorSub.write('periodic_release =  (NumJobStarts < 3) && ((CurrentTime - EnteredCurrentStatus) > (60*3))\n')
         condorSub.write('request_cpus = 1\n')
@@ -168,7 +168,7 @@ def createCondor__(args):
         condorSub.write('\n\n')
 
         if args.tier == "afs":
-            condorSub.write(f'transfer_output_remaps = "{lhe_prefix_}.root = {args.output}/{lhe_prefix_}_$(Step).root"\n')
+            condorSub.write(f'transfer_output_remaps = "{lhe_prefix_}.root = {args.output}/{lhe_prefix_}_$(ProcId).root"\n')
             condorSub.write('when_to_transfer_output = ON_EXIT\n')
             condorSub.write('\n\n')
 
@@ -190,7 +190,7 @@ def createCondor__(args):
         condorExe.write(f'mkdir $CMSSW_BASE/src/LHEprod; mkdir $CMSSW_BASE/src/LHEprod/LHEDumper\n')
         condorExe.write('cp -r plugins $CMSSW_BASE/src/LHEprod/LHEDumper\n')
         condorExe.write('cp -r python $CMSSW_BASE/src/LHEprod/LHEDumper \n')
-        condorExe.write('cp LHEDumperRunner.py $CMSSW_BASE/src/LHEprod/LHEDumper\n')
+        condorExe.write(f'cp {args.condorExe_config["runner"]} $CMSSW_BASE/src/LHEprod/LHEDumper\n')
         condorExe.write('\n\n')
         if eosgp or eoslhe: condorExe.write(f'xrdcp {d["EOS_MGM_URL"]}/"${2}" .\n')
         condorExe.write('splits=($(echo $2 | tr "/" " "))\n')
@@ -263,7 +263,7 @@ def createCondor__(args):
         condorSub.write(f'executable = {exe_}\n')
         condorSub.write('universe = vanilla\n')
         for step__ in ["output", "error", "log"]:
-            condorSub.write(f'{step__}                = {full_path_}/job.$(ClusterId).$(ProcId).$(Step).{step__[:3]}\n')
+            condorSub.write(f'{step__}                = {full_path_}/job.$(ClusterId).$(ProcId).$(ProcId).{step__[:3]}\n')
         condorSub.write('on_exit_hold = (ExitBySignal == True) || (ExitCode != 0)\n')
         condorSub.write('periodic_release =  (NumJobStarts < 3) && ((CurrentTime - EnteredCurrentStatus) > (60*3))\n')
         condorSub.write('request_cpus = 1\n')
@@ -275,14 +275,14 @@ def createCondor__(args):
         condorSub.write(f'nthreads = {args.nthreads}\n')
         condorSub.write(f'nevents = {args.nevents}\n')
         condorSub.write("\n\n")
-        condorSub.write('arguments = $(Step) $(gridpack) $(nthreads) $(nevents)\n')
+        condorSub.write('arguments = $(ProcId) $(gridpack) $(nthreads) $(nevents)\n')
         condorSub.write('should_transfer_files = YES\n')
         condorSub.write('transfer_input_files = {}, {}, {} {}'.format(runner_, pluginsfolder_, pyfolder_, ", " + args.gridpack + "\n" if not eosgp else "\n" ))
 
         condorSub.write(f'+JobFlavour = "{args.queue}"\n')
         condorSub.write('\n\n')
         if args.tier == "afs":
-            condorSub.write(f'transfer_output_remaps = "{lhe_prefix_}.root = {args.output}/{lhe_prefix_}_$(Step).root"\n')
+            condorSub.write(f'transfer_output_remaps = "{lhe_prefix_}.root = {args.output}/{lhe_prefix_}_$(ProcId).root"\n')
             condorSub.write('when_to_transfer_output = ON_EXIT\n')
             condorSub.write('\n\n')
 
@@ -663,15 +663,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    print(args.lhefiles)
-
     if not args.tier in ["afs", "eos", "crab"]: raise KeyError(f"Tier argument {args.tier} is not supported is not in afs eos crab")
-
-    if args.lhefiles:
-        condorpath_ = createCondor__(args)
-        submitCondor__(condorpath_)
-        print("Done")
-        exit()
     
     if not args.merge and not args.basew:
         if args.tier == "eos":
