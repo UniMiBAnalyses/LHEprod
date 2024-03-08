@@ -39,6 +39,7 @@ def customizeArgs__(args):
     # if the user requested lhe ntuplizer
 
     base_ = os.environ["CMSSW_BASE"]
+    lhe_prefix_ = "nAOD_LHE"
 
     if not args.gridpack and not args.lhefiles: raise KeyError(f"You should either specify -gp <path_to_gridpack> for event generation \
                                                     or -lhe <path_to_lhe_folder> to ntuplize existing lhe files")
@@ -53,6 +54,9 @@ def customizeArgs__(args):
     condorSub_config["arguments"] = {}
     if args.gridpack:
         eosgp = args.gridpack.startswith("/eos")
+        if not eosgp and not args.gridpack.startswith("/"):
+            # convert into absolute path 
+            args.gridpack = os.path.abspath(args.gridpack)
         condorSub_config["arguments"]['gridpack'] = args.gridpack 
         condorSub_config["arguments"]['nthreads'] = args.nthreads 
         condorSub_config["arguments"]['nevents'] = args.nevents 
