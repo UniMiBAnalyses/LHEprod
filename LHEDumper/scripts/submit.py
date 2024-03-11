@@ -93,7 +93,7 @@ def customizeArgs__(args):
             'cp $gp_here $CMSSW_BASE/src/LHEprod/LHEDumper\n'
         ]
 
-        if not eosgp: condorExe_config["commands"].pop(0)
+        # if not eosgp: condorExe_config["commands"].pop(0)
 
         condorExe_config["cmsRun"] = '-e -j FrameworkJobReport.xml LHEDumperRunner.py jobNum="$1" seed="$1" nthreads="$3" nevents="$4" input="${PWD}/${gp_here}"\n'
 
