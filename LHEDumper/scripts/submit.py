@@ -442,11 +442,19 @@ def createCrab__(args):
     from CRABAPI.RawCommand import crabCommand
     crabCommand('submit', config = config)
 
-def computeXsec__(file_):
+def computeXsec__(arg):
+    file_ = arg["file"]
+    mode_ = arg["mode"]
     print(f'processing file {file_}')
     df = ROOT.RDataFrame("Events", file_)
     xsec = df.Sum("LHEWeight_originalXWGTUP").GetValue()
     nev = df.Count().GetValue()
+
+    if mode_ == 0: # default, sum of weight = xsec
+        pass
+    elif mode_ == 1: # alternative: average of weights = xsec
+       print("Average")
+       xsec /= nev
     
     return [xsec, nev]
 
@@ -462,6 +470,7 @@ def mtCrossSectionWeight__(args):
     if len(retrieve_) == 0:
         print(f'Info did not found any file at path {args.output}, check job status')
 
+    retrieve_ = [{"file": k, "mode": args.basewmode} for k in retrieve_]
     # compute the cross section weight for the generation
     # Need to scan each file separately
     pool = mp.Pool(8)
@@ -471,12 +480,43 @@ def mtCrossSectionWeight__(args):
     err = xsecs.std()
     nev = np.array([i[1] for i in results]).sum()
     
-    # We can use this value to fill histograms and obtain the right normalization straight away
-    # Will save as fb in order to normalize with integrated lumi at LHC
-    # sum of weights = xsec !!!
-    baseW =  1000.* xsec/nev
+    # In principle we would like to weight the events so that 
+    # h.Fill(x, w) automatically scales correctly to the xsec of the event
+    # There are two problems:
+    # 1) For each event generation you can decide if either the sum or average of event weight = cross section 
+    # 2) While in LO all weights are equal, in NLO not the case -> we need to use LHEWeight_originalXWGTUP
+    # 
+    # So each sample will be weighted via LHEWeight_originalXWGTUP to obtain the correct shape
+    # if we are using LO or NLO. But we need an additional factor (baseW) constant that 
+    # scales everything to the correct cross section
+    # Assume you generated M independent generations (jobs) each of N events
+    # Case 1: sum(w) = cross section (sigma)
+    #    
+    #    sum(w)1 + sum(w)2 + ... sum(w)M = sigma1 + sigma2 + ... + sigmaM ~ Msigma
+    #    sigma = 1/M sum_j^M[sum_i^N(w_ij)] 
+    #
+    # Case 2: avg(w) = cross section (sigma)
+    #
+    #    1/N sum(w)1 + 1/N sum(w)2 + ... 1/N sum(w)M ~ Msigma
+    #    sigma = 1/MN sum_j^M[sum_i^N(w_ij)] = 1/Ntot sum_j^M[sum_i^N(w_ij)]
+    #
+    # Therefore baseW will depend on the normalization chosen for the xsec weight as follows
+    #    sum: baseW = 1/M
+    #    ave: baseW = 1/Ntot
+    #
+    # An additional factor 1000 at the numerator is needed to convert pb to fb 
 
-    print(f"Final xsec = {xsec} +- {err} pb for NEvents {nev} (per-event weight: {baseW} fb)")
+    # If the sumw is equal to cross section for each set of indipendently generated events
+    if args.basewmode == 0:
+        # 1000 factor to convert from pb to fb
+        # Here number of files (len(retrieve_)) is equal to M, the number of independent
+        # genrations performed. 
+        baseW = 1000. / len(retrieve_)
+    # If the averagew is equal to cross section for each set of indipendently generated events
+    elif args.basewmode == 1:
+        baseW = 1000. / nev
+
+    print(f"Final xsec = {xsec} +- {err} pb for NEvents {nev} (per-event weight: LHEWeight_originalXWGTUP* {baseW} fb)")
 
     return baseW
 
@@ -488,12 +528,16 @@ def mtbaseWUtil__(arg):
 
     df = ROOT.RDataFrame("Events", arg['path'])
 
-    if "baseW" in df.GetColumnNames(): return 
+    # if "baseW" in df.GetColumnNames(): return 
 
     tmp__ = tempfile.NamedTemporaryFile( suffix='.root' ) 
     os.remove(tmp__.name)
-    
-    df.Define("baseW", str(arg['baseW'])).Snapshot("Events", tmp__.name, "", opts)
+   
+    if "baseW" not in df.GetColumnNames():
+       df.Define("baseW", str(arg['baseW'])).Snapshot("Events", tmp__.name, "", opts)
+    else:
+       df.Redefine("baseW", str(arg['baseW'])).Snapshot("Events", tmp__.name, "", opts)
+
     shutil.copyfile(tmp__.name, arg['path'])
 
 def appendBaseW__(files, baseW):
@@ -658,6 +702,7 @@ if __name__ == "__main__":
     parser.add_argument('--conf',   dest='conf',     help='Load configuration file (default=configuration/conf.json)', required = False, default = os.path.join(os.environ["CMSSW_BASE"], "src", "LHEprod", "LHEDumper", "configuration", "conf.json"))
     # Appen base w
     parser.add_argument('--basew',          dest='basew',     help='Add the cross section weight gathering all the files from the output folders', default=False, action='store_true')
+    parser.add_argument('--basewmode',          dest='basewmode',     help='If 0 assumes sum weight=xsec (default), if 1 assumes average weight = xsec', default=0, type=int)
     # crab specific settings
     parser.add_argument('--crabconf',       dest='crabconf',        help='Crab config json file (default=configuration/crabconf.json)', required = False, default = os.path.join(os.environ["CMSSW_BASE"], "src", "LHEprod", "LHEDumper", "configuration", "crabconf.json"))
     parser.add_argument('--datasetname',    dest='datasetname',     help='Crab dataset name under config.Data.outputPrimaryDataset. Can also specify in crabconfig', required = False, default = None)
