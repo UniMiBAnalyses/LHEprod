@@ -89,3 +89,11 @@ PDF and the reweighting weights if any.
 'LHEPart_spin', 'LHEWeight_originalXWGTUP', 'nLHEPdfWeight', 'LHEPdfWeight', 'nLHEReweightingWeight',
 'LHEReweightingWeight', 'nLHEScaleWeight', 'LHEScaleWeight']
 ```
+
+# Problems
+
+For some gridpacks it can be necessary to change the LHE code plugin by substituting [this line](https://github.com/UniMiBAnalyses/LHEprod/blob/bb547d94a2c933d10548b80bf77ad8dc48d0c099/LHEDumper/plugins/LHEWeightsTableProducer.cc#L427) with 
+
+```
+std::regex weightgroupRwgt("<weightgroup\\s+(?:name)=\"(.*)\"\\s+(?:weight_name_strategy)=\"(.*)\"\\s*>");
+```
