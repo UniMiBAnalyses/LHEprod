@@ -9,7 +9,7 @@ To run the generation you first need to have a gridpack. You'll also need to hav
 
 ```
 # cmsrel <release_name>
-cmsrel CMSSW_12_4_11_patch3; cd  CMSSW_12_4_11_patch3/src; cmsenv         # get cmssw version and activate env
+cmsrel CMSSW_13_3_1; cd  CMSSW_13_3_1/src; cmsenv         # get cmssw version and activate env
 git clone git@github.com:UniMiBAnalyses/LHEprod.git                       # clone this repo     
 source env.sh                                                             # crab and script setup
 scram b -j 8                                                              # compile the plugins
@@ -20,9 +20,9 @@ For generating events locally one can simply run:
 ```
 cd Dumpers/LHEDumper
 cmsRun LHEDumperRunner.py input=<PATH_TO_GRIDPACK(default=gridpack.tar.xz)> \
-                          output=<OUTPUT_ROOT_FILE(default=output.root)> \
                           nevents=<NUMBER_OF_EVENTS(default=10)> \
-                          seed=<STARTING_SEED(default=10)> 
+                          seed=<STARTING_SEED(default=10)>
+                          jobNum=<JOB_NUMBER>
 ```
 
 A script is also provided to submit the generation in batch mode and on crab:
@@ -88,4 +88,12 @@ PDF and the reweighting weights if any.
 'LHEPart_eta', 'LHEPart_phi', 'LHEPart_mass', 'LHEPart_incomingpz', 'LHEPart_pdgId', 'LHEPart_status',
 'LHEPart_spin', 'LHEWeight_originalXWGTUP', 'nLHEPdfWeight', 'LHEPdfWeight', 'nLHEReweightingWeight',
 'LHEReweightingWeight', 'nLHEScaleWeight', 'LHEScaleWeight']
+```
+
+# Problems
+
+For some gridpacks it can be necessary to change the LHE code plugin by substituting [this line](https://github.com/UniMiBAnalyses/LHEprod/blob/bb547d94a2c933d10548b80bf77ad8dc48d0c099/LHEDumper/plugins/LHEWeightsTableProducer.cc#L427) with 
+
+```
+std::regex weightgroupRwgt("<weightgroup\\s+(?:name)=\"(.*)\"\\s+(?:weight_name_strategy)=\"(.*)\"\\s*>");
 ```
