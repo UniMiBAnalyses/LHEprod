@@ -339,9 +339,9 @@ public:
                            std::unique_ptr<nanoaod::FlatTable>& outPdf,
                            std::unique_ptr<nanoaod::FlatTable>& outRwgt,
                            std::unique_ptr<nanoaod::FlatTable>& outNamed) const {
-    bool lheDebug = debug_.exchange(
-        false);  // make sure only the first thread dumps out this (even if may still be mixed up with other output, but nevermind)
-
+//    bool lheDebug = debug_.exchange(
+//        false);  // make sure only the first thread dumps out this (even if may still be mixed up with other output, but nevermind)
+    bool lheDebug = debug_.exchange(true);
     const std::vector<std::string>& scaleWeightIDs = weightChoice->scaleWeightIDs;
     const std::vector<std::string>& pdfWeightIDs = weightChoice->pdfWeightIDs;
     const std::vector<std::string>& rwgtWeightIDs = weightChoice->rwgtIDs;
@@ -351,8 +351,8 @@ public:
     std::vector<double> wScale(scaleWeightIDs.size(), 1), wPDF(pdfWeightIDs.size(), 1), wRwgt(rwgtWeightIDs.size(), 1),
         wNamed(namedWeightIDs_.size(), 1);
     for (auto& weight : lheProd.weights()) {
-      if (lheDebug)
-        printf("Weight  %+9.5f   rel %+9.5f   for id %s\n", weight.wgt, weight.wgt / w0, weight.id.c_str());
+      // if (lheDebug)
+      //   printf("Weight  %+9.5f   rel %+9.5f   for id %s\n", weight.wgt, weight.wgt / w0, weight.id.c_str());
       // now we do it slowly, can be optimized
       auto mScale = std::find(scaleWeightIDs.begin(), scaleWeightIDs.end(), weight.id);
       if (mScale != scaleWeightIDs.end())
@@ -404,8 +404,9 @@ public:
   std::shared_ptr<DynamicWeightChoice> globalBeginRun(edm::Run const& iRun, edm::EventSetup const&) const override {
     edm::Handle<LHERunInfoProduct> lheInfo;
 
-    bool lheDebug = debugRun_.exchange(
-        false);  // make sure only the first thread dumps out this (even if may still be mixed up with other output, but nevermind)
+    // bool lheDebug = debugRun_.exchange(
+    //     false);  // make sure only the first thread dumps out this (even if may still be mixed up with other output, but nevermind)
+    bool lheDebug = true;
     auto weightChoice = std::make_shared<DynamicWeightChoice>();
 
     // getByToken throws since we're not in the endRun (see https://github.com/cms-sw/cmssw/pull/18499)
@@ -452,7 +453,9 @@ public:
           "\\s*(?:PDF=(\\d+)\\s*MemberID=(\\d+))?\\s*(?:\\s.*)?</"
           "weight>");
 
-      std::regex rwgt("<weight\\s+id=\"(.+)\">(.+)?(</weight>)?");
+      // std::regex rwgt("<weight\\s+id=\"(.+)\">(.+)?(</weight>)?");
+      std::regex rwgt("<weight\\s+id=\"(.+)\">(.*)");
+      std::regex rwgt_empty("<weight\\s+id=\"(.+)\"/>");
       std::smatch groups;
       for (auto iter = lheInfo->headers_begin(), end = lheInfo->headers_end(); iter != end; ++iter) {
         if (iter->tag() != "initrwgt") {
@@ -479,6 +482,7 @@ public:
           }
         }
         for (unsigned int iLine = 0, nLines = lines.size(); iLine < nLines; ++iLine) {
+	  std::cout << iLine << " " << lheDebug << std::endl;
           if (lheDebug)
             std::cout << lines[iLine];
           if (std::regex_search(lines[iLine], groups, ismg26x ? weightgroupmg26x : weightgroup)) {
@@ -651,7 +655,7 @@ public:
                 std::cout << ">>> Looks like an EW parameter weight" << std::endl;
               for (++iLine; iLine < nLines; ++iLine) {
                 if (lheDebug)
-                  std::cout << "    " << lines[iLine];
+                   std::cout << "    " << lines[iLine] << std::endl;
                 if (std::regex_search(lines[iLine], groups, rwgt)) {
                   std::string rwgtID = groups.str(1);
                   if (lheDebug)
@@ -694,8 +698,11 @@ public:
               if (lheDebug)
                 std::cout << ">>> Looks like a LHE weights for reweighting" << std::endl;
               for (++iLine; iLine < nLines; ++iLine) {
-                if (lheDebug)
+                if (lheDebug){
                   std::cout << "    " << lines[iLine];
+                  //std::cout << "    " << std::regex_search(lines[iLine], groups, rwgt) << std::endl;
+		  //std::cout << "    " << std::regex_search(lines[iLine], groups, rwgt_empty) << std::endl;
+		}
                 if (std::regex_search(lines[iLine], groups, rwgt)) {
                   std::string rwgtID = groups.str(1);
                   if (lheDebug)
@@ -704,7 +711,15 @@ public:
                     // we're only interested in the beggining of the block
                     lheReweighingIDs.emplace_back(rwgtID);
                   }
-                } else if (std::regex_search(lines[iLine], endweightgroup)) {
+                } else if (std::regex_search(lines[iLine], groups, rwgt_empty)) {
+		  std::string rwgtID = groups.str(1);
+                  if (lheDebug)
+                    std::cout << "    >>> LHE reweighting weight: " << rwgtID << std::endl;
+                  if (std::find(lheReweighingIDs.begin(), lheReweighingIDs.end(), rwgtID) == lheReweighingIDs.end()) {
+                    // we're only interested in the beggining of the block
+                    lheReweighingIDs.emplace_back(rwgtID);
+                  }
+		} else if (std::regex_search(lines[iLine], endweightgroup)) {
                   if (lheDebug)
                     std::cout << ">>> Looks like the end of a weight group" << std::endl;
                   if (!missed_weightgroup) {
